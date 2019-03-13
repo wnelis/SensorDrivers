@@ -3,7 +3,7 @@
 # These class definitions are specific for a Raspberry Pi, as it is assumed that
 # the I2C channel number is one. The class definitions only support the forced
 # mode of measurements. Using Python module smbus2, an all Python driver for
-# these sensores is realised.
+# these sensors is realised.
 #
 # Written by W.J.M. Nelis, wim.nelis@ziggo.nl, 2018.02
 #
