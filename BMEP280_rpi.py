@@ -186,18 +186,18 @@ class BMP280( smbus.SMBus ):
  # variable t_fine = int( a*raw^2 + b*raw + c ), with:
  #   a = cpt[2]/17179869184
  #   b = cpt[1]/16384 - cpt[0]*cpt[2]/536870912
- #   c = cpt[0]*(cpt[0]*cpt[2]/67108864 - cpt[1]/1024
+ #   c = cpt[0]*(cpt[0]*cpt[2]/67108864 - cpt[1]/1024)
  # These numbers must be computed with high precision. If this is possible in
  # advance, the temperature will become simpler and faster to compute.
  #
   @property
   def temperature( self ):
     self._read_raw()
-    var1= (self.rawtemp/ 16384.0 - self.cpt[0]/1024.0)*self.cpt[1]
-    var2=  self.rawtemp/131072.0 - self.cpt[0]/8192.0
-    var2= var2*var2*self.cpt[2]
-    self.t_fine= int( var1 + var2 )
-    return (var1 + var2)/5120.0
+    var0= self.rawtemp/16384.0 - self.cpt[0]/1024.0
+    var1= var0*self.cpt[1]
+    var0= var0*var0*self.cpt[2]/64.0
+    self.t_fine= int( var0 + var1 )
+    return (var0 + var1)/5120.0
 
 
 #
@@ -315,14 +315,13 @@ class BME280( BMP280 ):
     self._read_raw()
     if self.t_fine is None:  self.temperature
 
-    var1= float(self.t_fine) - 76800.0
-    var2= self.cph[3] * 64.0 + self.cph[4] / 16384.0 * var1
-    var3= float(self.rawhumi) - var2
-    var4= self.cph[1] / 65536.0
-    var5= 1.0 + (self.cph[2] / 67108864.0) * var1
-    var6= 1.0 + (self.cph[5] / 67108864.0) * var1 * var5
-    var6= var3 * var4 * var5 * var6
-    humi= var6 * (1.0 - self.cph[0] * var6 / 524288.0)
+    var0= float(self.t_fine) - 76800.0
+    var1= float(self.rawhumi) - self.cph[3]*64.0 - self.cph[4]/16384.0*var0
+    var2= self.cph[1]/65536.0
+    var3= 1.0 + (self.cph[2]/67108864.0)*var0
+    var4= 1.0 + (self.cph[5]/67108864.0)*var0*var3
+    var5= var1*var2*var4
+    humi= var5*(1.0 - self.cph[0]*var5/524288.0)
 
     humi= max( 0.0, min(100.0,humi) )
     return humi / 100.0
