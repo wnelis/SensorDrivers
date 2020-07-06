@@ -187,14 +187,22 @@ class BMP280():
  # temperature value (t_fine) is saved as an instance variable: it is needed to
  # calculate the calibrated pressure.
  #
+ # Note: the formulas below are effectively a second degree polynomial. The
+ # variable t_fine = int( a*raw^2 + b*raw + c ), with:
+ #   a = cpt[2]/17179869184
+ #   b = cpt[1]/16384 - cpt[0]*cpt[2]/536870912
+ #   c = cpt[0]*(cpt[0]*cpt[2]/67108864 - cpt[1]/1024)
+ # These numbers must be computed with high precision. If this is possible in
+ # advance, the temperature will become simpler and faster to compute.
+ #
   @property
   def temperature( self ):
     self._read_raw()
-    var1= (self.rawtemp/ 16384.0 - self.cpt[0]/1024.0)*self.cpt[1]
-    var2=  self.rawtemp/131072.0 - self.cpt[0]/8192.0
-    var2= var2*var2*self.cpt[2]
-    self.t_fine= int( var1 + var2 )
-    return (var1 + var2)/5120.0
+    var0= self.rawtemp/16384.0 - self.cpt[0]/1024.0
+    var1= var0*self.cpt[1]
+    var0= var0*var0*self.cpt[2]/64.0
+    self.t_fine= int( var0 + var1 )
+    return (var0 + var1)/5120.0
 
 
 #
@@ -242,8 +250,8 @@ class BME280( BMP280 ):
  #
   def _check_chip( self ):
     chip_id= self._read_register( BME280_REG_CHIP_ID )
-    if chip_id != BME280_VAL_CHIP_ID:
-      raise ValueError( "Unexpected chip identifier: {:04x}".format(chip_id) )
+    assert chip_id == BME280_VAL_CHIP_ID, \
+      "Unexpected chip identifier: {:04x}".format(chip_id)
 
  #
  # Private method _load_calibration loads the calibration data, also called the
@@ -293,7 +301,7 @@ class BME280( BMP280 ):
       self.tom    = now
 
  #
- # Property humiduty returns the calibrated humidity expressed as a fraction,
+ # Property humidity returns the calibrated humidity expressed as a fraction,
  # thus a value in the range [0,1]. The formulas were initially taken from the
  # Bosch BME280 datasheet, section 8.1. However, the sample code published by
  # the manufacturer contains a slightly different formula (see
@@ -312,34 +320,32 @@ class BME280( BMP280 ):
     self._read_raw()
     if self.t_fine is None:  self.temperature
 
-    var1= float(self.t_fine) - 76800.0
-    var2= self.cph[3] * 64.0 + self.cph[4] / 16384.0 * var1
-    var3= float(self.rawhumi) - var2
-    var4= self.cph[1] / 65536.0
-    var5= 1.0 + (self.cph[2] / 67108864.0) * var1
-    var6= 1.0 + (self.cph[5] / 67108864.0) * var1 * var5
-    var6= var3 * var4 * var5 * var6
-    humi= var6 * (1.0 - self.cph[0] * var6 / 524288.0)
+    var0= float(self.t_fine) - 76800.0
+    var1= float(self.rawhumi) - self.cph[3]*64.0 - self.cph[4]/16384.0*var0
+    var2= self.cph[1]/65536.0
+    var3= 1.0 + (self.cph[2]/67108864.0)*var0
+    var4= 1.0 + (self.cph[5]/67108864.0)*var0*var3
+    var5= var1*var2*var4
+    humi= var5*(1.0 - self.cph[0]*var5/524288.0)
 
-    if humi > 100.0:  humi= 100.0
-    if humi <   0.0:  humi=   0.0
+    humi= max( 0.0, min(100.0,humi) )
     return humi / 100.0
 
-#
-# Property dew_point calculates the dew point temperature expressed in [C],
-# given the temperature and the relative humidity. The formula and the constants
-# are taken from URL https://nl.wikipedia.org/wiki/Dauwpunt. See also URL
-# https://en.wikipedia.org/wiki/Vapour_pressure_of_water
-#
-# The computation is using the Tetens approximation formula between temperature
-# T and the maximal vapor pressure P twice. The formula is:
-#  P= c*exp( a*T/(b+T) )                        (0)
-# The inverse of this formula is:
-#  T= b*ln(P/c)/( a - ln(P/c) )                 (1)
-# Multiplying P for the current temperature T with the relative humidity and
-# substituting this product in formula (1) results in the formula's used in
-# this method.
-#
+ #
+ # Property dew_point calculates the dew point temperature expressed in [C],
+ # given the temperature and the relative humidity. The formula and the
+ # constants are taken from URL https://nl.wikipedia.org/wiki/Dauwpunt. See also
+ # URL https://en.wikipedia.org/wiki/Vapour_pressure_of_water
+ #
+ # The computation is using the Tetens approximation formula between temperature
+ # T and the maximal vapor pressure P twice. The formula is:
+ #  P= c*exp( a*T/(b+T) )                        (0)
+ # The inverse of this formula is:
+ #  T= b*ln(P/c)/( a - ln(P/c) )                 (1)
+ # Multiplying P for the current temperature T with the relative humidity and
+ # substituting this product in formula (1) results in the formula's used in
+ # this method.
+ #
   @property
   def dew_point( self ):
     temp= self.temperature
