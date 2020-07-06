@@ -11,9 +11,9 @@
 # - Improve error handling, especially in method _read_raw(). Define the return
 #   status in case of an I/O error. (rawtemp == None in case of failure?)
 #
-import math
-import smbus2 as smbus
-import struct
+import math				# Logarithm
+import smbus2 as smbus			# I2C driver
+import struct				# Decoding of calibration data
 import time
 
 #
@@ -52,6 +52,8 @@ class BMP280( smbus.SMBus ):
 
   # Preset instance variables.
     self.device  = device		# i2c slave device address
+    self.cpt     = [0.0]*3		# Temperature calibration parameters
+    self.cpp     = [0.0]*9		# Pressure calibration parameters
     self.rawtemp = None			# Last temperature measurement
     self.rawpres = None			# Last pressure measurement
     self.t_fine  = None			# Compensation temperature value
@@ -63,28 +65,25 @@ class BMP280( smbus.SMBus ):
     self._load_calibration()		# Fetch calibration data
 
  #
- # Method _check_chip checks if the chip identifier matches the expected value.
- # Finding the chip identifier also implies that the chip is operational.
+ # Private method _check_chip checks if the chip identifier matches the expected
+ # value. Finding the chip identifier also implies that the chip is operational.
  #
   def _check_chip( self ):
-    chip_id= self.read_byte_data( self.device, BMP280_REG_CHIP_ID )
-    if chip_id != BMP280_VAL_CHIP_ID:
-      raise ValueError( "Unexpected chip identifier: %04x" % chip_id )
+    chip_id= self._read_register( BMP280_REG_CHIP_ID )
+    assert chip_id == BMP280_VAL_CHIP_ID, \
+      "Unexpected chip identifier: {:04x}".format(chip_id)
 
   def _config_chip( self ):
-    self.write_byte_data( self.device, BMP280_REG_CONFIG, BMP280_VAL_CONFIG )
+    self._write_register( BMP280_REG_CONFIG, BMP280_VAL_CONFIG )
 
  #
- # Method _load_calibration loads the calibration data, also called the
+ # Private method _load_calibration loads the calibration data, also called the
  # compensation parameters, from the chip and saves them in this instance
  # itself. The algorithm is taken from URL
  # https://github.com/adafruit/Adafruit_CircuitPython_BMP280/blob/master/adafruit_bmp280.py
  #
   def _load_calibration( self ):
-    self.cpt= [0]*3			# Preset calibration parameters
-    self.cpp= [0]*9
-
-    c= self.read_i2c_block_data( self.device, BMP280_REG_CALIBRTN, BMP280_LNG_CALIBRTN )
+    c= self._read_registers( BMP280_REG_CALIBRTN, BMP280_LNG_CALIBRTN )
     c= list(struct.unpack( '<HhhHhhhhhhhh', bytes(c) ))	# Extract (un)signed shorts
     c= [ float(i)  for i in c ]		# Convert to floating point format
 
@@ -105,17 +104,17 @@ class BMP280( smbus.SMBus ):
   # typically needed is 1.5 + 2*(osr_t + osr_p) [ms]. Check every 10 [ms] if the
   # measurement is completed.
   #
-      self.write_byte_data( self.device, BMP280_REG_CONTROL, BMP280_VAL_CONTROL )
+      self._write_register( BMP280_REG_CONTROL, BMP280_VAL_CONTROL )
       m= 1				# A random integer non-zero value
       while m != 0:
         time.sleep( 0.010 )
         try:
-          m= self.read_register( BMP280_REG_STATUS ) & 0x08
+          m= self._read_register( BMP280_REG_STATUS ) & 0x08
         except OSError as err:
           pass				# Ignore I/O error
 
       try:
-        d= self.read_i2c_block_data( self.device, BMP280_REG_RAW_DATA, BMP280_LNG_RAW_DATA )
+        d= self._read_registers( BMP280_REG_RAW_DATA, BMP280_LNG_RAW_DATA )
       except OSError as err:
         pass
 
@@ -125,12 +124,36 @@ class BMP280( smbus.SMBus ):
       self.tom    = now
 
  #
- # Return the calibrated pressure. The formulas are taken from the Bosch BMP280
- # datasheet, section 8.1.
+ # Private method _read_register returns the content of one register, a byte
+ # value. The register address must be in the range [0x80,0xff].
  #
-  def read_pressure( self ):
+  def _read_register( self, register ):
+    assert 0x7f < register < 0x100, \
+      'Register address out of range: {:02x}'.format(register)
+    return self.read_byte_data( self.device, register, 1 )
+
+  def _read_registers( self, register, count ):
+    assert 0x7f < register  and  register+count < 0x101, \
+      'Register address out of range: {:02x}'.format(register)
+    return self.read_i2c_block_data( self.device, register, count )
+
+ #
+ # Private method _write_register writes one byte into one register. The
+ # register address must be in the range [0x80,0xff].
+ #
+  def _write_register( self, register, value ):
+    assert 0x7f < register < 0x100, \
+      'Register address out of range: {:02x}'.format(register)
+    return self.write_byte_data( self.device, register, value )
+
+ #
+ # Property pressure returns the calibrated pressure expressed in [Pa]. The
+ # formulas are taken from the Bosch BMP280 datasheet, section 8.1.
+ #
+  @property
+  def pressure( self ):
     self._read_raw()
-    if self.t_fine is None:  self.read_temperature()
+    if self.t_fine is None:  self.temperature
 
     var1= float(self.t_fine)/2.0 - 64000.0
     var2= var1*var1*self.cpp[5]/32768.0
@@ -147,31 +170,34 @@ class BMP280( smbus.SMBus ):
     return pres
 
  #
- # Return the content of one register, a byte value. The register address can be
- # in the range [0x80,0xff].
+ # Method reset performs a complete power-on reset.
  #
-  def read_register( self, register ):
-    if register < 0x80  or  register > 0xff:
-      raise ValueError( 'Register address out of range: %d' % register )
-    return self.read_byte_data( self.device, register )
+  def reset( self ):
+    self._write_register( BMP280_REG_RESET, BMP280_VAL_RESET )
+    time.sleep( 0.002 )			# Startup time
 
  #
- # Return the calibrated temperature. The formulas are taken from the Bosch
- # BMP280 datasheet, section 8.1. Note that a temperature value (t_fine) is
- # saved as an instance variable: it is needed to calculate the calibrated
- # pressure.
+ # Property temperature returns the calibrated temperature expressed in [C]. The
+ # formulas are taken from the Bosch BMP280 datasheet, section 8.1. Note that a
+ # temperature value (t_fine) is saved as an instance variable: it is needed to
+ # calculate the calibrated pressure.
  #
-  def read_temperature( self ):
+ # Note: the formulas below are effectively a second degree polynomial. The
+ # variable t_fine = int( a*raw^2 + b*raw + c ), with:
+ #   a = cpt[2]/17179869184
+ #   b = cpt[1]/16384 - cpt[0]*cpt[2]/536870912
+ #   c = cpt[0]*(cpt[0]*cpt[2]/67108864 - cpt[1]/1024
+ # These numbers must be computed with high precision. If this is possible in
+ # advance, the temperature will become simpler and faster to compute.
+ #
+  @property
+  def temperature( self ):
     self._read_raw()
     var1= (self.rawtemp/ 16384.0 - self.cpt[0]/1024.0)*self.cpt[1]
     var2=  self.rawtemp/131072.0 - self.cpt[0]/8192.0
     var2= var2*var2*self.cpt[2]
     self.t_fine= int( var1 + var2 )
     return (var1 + var2)/5120.0
-
-  def reset( self ):
-    self.write_byte_data( self.device, BMP280_REG_RESET, BMP280_VAL_RESET )
-    time.sleep( 0.002 )			# Startup time
 
 
 #
@@ -210,30 +236,30 @@ class BME280( BMP280 ):
     super().__init__( device )		# Parent initialisation
 
   # Presets which are specific to a BME280.
-    self.write_byte_data( self.device, BME280_REG_CONTROL1, BME280_VAL_CONTROL1 )
     self.rawhumi = None			# Last humidity measurement
+    self._write_register( BME280_REG_CONTROL1, BME280_VAL_CONTROL1 )
 
  #
- # Method _check_chip checks if the chip identifier matches the expected value.
- # Finding the chip identifier also implies that the chip is operational.
+ # Private method _check_chip checks if the chip identifier matches the expected
+ # value. Finding the chip identifier also implies that the chip is operational.
  #
   def _check_chip( self ):
-    chip_id= self.read_byte_data( self.device, BME280_REG_CHIP_ID )
-    if chip_id != BME280_VAL_CHIP_ID:
-      raise ValueError( "Unexpected chip identifier: %04x" % chip_id )
+    chip_id= self._read_register( BME280_REG_CHIP_ID )
+    assert chip_id == BME280_VAL_CHIP_ID, \
+      "Unexpected chip identifier: {:04x}".format(chip_id)
 
  #
- # Method _load_calibration loads the calibration data, also called the
+ # Private method _load_calibration loads the calibration data, also called the
  # compensation parameters, from the chip and saves them in this instance
  # itself.
  #
   def _load_calibration( self ):
     super()._load_calibration()		# Do the BMP280 compatible part
 
-    self.cph   = [0]*6			# Preset calibration parameters
-    self.cph[0]= float(self.read_byte_data( self.device, BME280_REG_DIGH1 ))
+    self.cph   = [0.0]*6		# Preset calibration parameters
+    self.cph[0]= float(self._read_register( BME280_REG_DIGH1 ))
 
-    c= self.read_i2c_block_data( self.device, BME280_REG_DIGH2, BME280_LNG_DIGH2 )
+    c= self._read_registers( BME280_REG_DIGH2, BME280_LNG_DIGH2 )
     c= list(struct.unpack( '<hBBBBb', bytes(c) ))
     self.cph[1]= float(c[0])
     self.cph[2]= float(c[1])
@@ -242,9 +268,9 @@ class BME280( BMP280 ):
     self.cph[5]= float(c[5])
 
  #
- # Method _read_raw retrieves the current (raw) measurements of the pressure,
- # the temperature and the humidity. The mode of operation is forced mode, thus
- # the sensor must be triggered to perform a measurement. At most one
+ # Private method _read_raw retrieves the current (raw) measurements of the
+ # pressure, the temperature and the humidity. The mode of operation is forced
+ # mode, thus the sensor must be triggered to perform a measurement. At most one
  # measurement per livetime seconds is performed.
  #
   def _read_raw( self ):
@@ -256,13 +282,13 @@ class BME280( BMP280 ):
   # time typically needed is 2 + 2*(osr_t + osr_p + osr_h) [ms]. Check every 10
   # [ms] if the measurement is completed.
   #
-      self.write_byte_data( self.device, BME280_REG_CONTROL0, BME280_VAL_CONTROL0 )
+      self._write_register( BME280_REG_CONTROL0, BME280_VAL_CONTROL0 )
       m= 1				# A random integer non-zero value
       while m != 0:
         time.sleep( 0.010 )
-        m= self.read_register( BME280_REG_STATUS ) & 0x08
+        m= self._read_register( BME280_REG_STATUS ) & 0x08
 
-      d= self.read_i2c_block_data( self.device, BME280_REG_RAW_DATA, BME280_LNG_RAW_DATA )
+      d= self._read_registers( BME280_REG_RAW_DATA, BME280_LNG_RAW_DATA )
       self.rawpres= ((d[0]<<16) + (d[1]<<8) + d[2])>>4
       self.rawtemp= ((d[3]<<16) + (d[4]<<8) + d[5])>>4
       self.rawhumi=  (d[6]<< 8) +  d[7]
@@ -270,7 +296,8 @@ class BME280( BMP280 ):
       self.tom    = now
 
  #
- # Return the calibrated humidity. The formulas were initially taken from the
+ # Property humidity returns the calibrated humidity expressed as a fraction,
+ # thus a value in the range [0,1]. The formulas were initially taken from the
  # Bosch BME280 datasheet, section 8.1. However, the sample code published by
  # the manufacturer contains a slightly different formula (see
  # https://github.com/BoschSensortec/BME280_driver/blob/master/bme280.c). As
@@ -283,9 +310,10 @@ class BME280( BMP280 ):
  # Note that a temperature value (t_fine) is saved as an instance variable: it
  # is needed to calculate the calibrated humidity.
  #
-  def read_humidity( self ):
+  @property
+  def humidity( self ):
     self._read_raw()
-    if self.t_fine is None:  self.read_temperature()
+    if self.t_fine is None:  self.temperature
 
     var1= float(self.t_fine) - 76800.0
     var2= self.cph[3] * 64.0 + self.cph[4] / 16384.0 * var1
@@ -296,30 +324,29 @@ class BME280( BMP280 ):
     var6= var3 * var4 * var5 * var6
     humi= var6 * (1.0 - self.cph[0] * var6 / 524288.0)
 
-    if humi > 100.0:  humi= 100.0
-    if humi <   0.0:  humi=   0.0
-    return humi
+    humi= max( 0.0, min(100.0,humi) )
+    return humi / 100.0
 
-#
-# Method read_dew_point calculates the dew point temperature, given the
-# temperature and the relative humidity. The formula and the constants are
-# taken from URL https://nl.wikipedia.org/wiki/Dauwpunt. See also URL
-# https://en.wikipedia.org/wiki/Vapour_pressure_of_water
-#
-# The computation is using the Tetens approximation formula between temperature
-# T and the maximal vapor pressure P twice. The formula is:
-#  P= c*exp( a*T/(b+T) )			(0)
-# The inverse of this formula is:
-#  T= b*ln(P/c)/( a - ln(P/c) )			(1)
-# Multiplying P for the current temperature T with the relative humidity and
-# substituting this product in formula (1) results in the formula's used in
-# this method.
-#
-  def read_dew_point( self ):
-    temp= self.read_temperature()
-    humi= self.read_humidity() / 100.0
+ #
+ # Property dew_point calculates the dew point temperature expressed in [C],
+ # given the temperature and the relative humidity. The formula and the
+ # constants are taken from URL https://nl.wikipedia.org/wiki/Dauwpunt. See also
+ # URL https://en.wikipedia.org/wiki/Vapour_pressure_of_water
+ #
+ # The computation is using the Tetens approximation formula between temperature
+ # T and the maximal vapor pressure P twice. The formula is:
+ #  P= c*exp( a*T/(b+T) )			(0)
+ # The inverse of this formula is:
+ #  T= b*ln(P/c)/( a - ln(P/c) )			(1)
+ # Multiplying P for the current temperature T with the relative humidity and
+ # substituting this product in formula (1) results in the formula's used in
+ # this method.
+ #
+  @property
+  def dew_point( self ):
+    temp= self.temperature
+    humi= self.humidity
     a=  17.27				# []
     b= 237.7				# [C]
     gamma= math.log(humi) + a*temp/(b + temp)
     return b*gamma/(a - gamma)
-
