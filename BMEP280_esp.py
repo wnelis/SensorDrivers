@@ -11,6 +11,7 @@
 #
 # Rewritten by W.J.M. Nelis, wim.nelis@ziggo.nl, 2020.06
 # - for a ESP8266 running microPython
+# - see also https://github.com/robert-hh/BME280
 #
 from machine import Pin, I2C            # I2C driver
 from micropython import const           # Memory minimisation
