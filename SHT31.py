@@ -125,7 +125,7 @@ class SHT31( smbus.SMBus ):
     self._write_command( SHT31_CLEARSTATUS )
 
   #
-  # Method read_dew_point calculates the dew point temperature, expressed in
+  # Property dew_point calculates the dew point temperature, expressed in
   # degrees Celsius, given the temperature and the relative humidity. The
   # formula and the constants are taken from URL
   # https://nl.wikipedia.org/wiki/Dauwpunt. See also URL
@@ -140,7 +140,8 @@ class SHT31( smbus.SMBus ):
   # substituting this product in formula (1) results in the formula's used in
   # this method.
   #
-  def read_dew_point():
+  @property
+  def dew_point( self ):
     self._read_raw()
     if self.rawrhum == None  or  self.rawtemp == None:
       return float( 'nan' )
@@ -153,20 +154,22 @@ class SHT31( smbus.SMBus ):
       return b*gamma/(a - gamma)
 
   #
-  # Method read_errocount returns the accumulated error count, and resets the
+  # Property error_count returns the accumulated error count, and resets the
   # internal error counter.
   #
-  def read_errorcount( self ):
+  @property
+  def error_count( self ):
     errcnt= self.crcerr
     self.crcerr= 0
     return errcnt
 
   #
-  # Method read_humidity returns the current relative humidity, a floating point
+  # Property humidity returns the current relative humidity, a floating point
   # number in the range 0 .. 100. If reading of the value fails, it returns the
   # value NaN.
   #
-  def read_humidity( self ):
+  @property
+  def humidity( self ):
     self._read_raw()
     if self.rawrhum == None:
       return float( 'nan' )
@@ -174,10 +177,11 @@ class SHT31( smbus.SMBus ):
       return 100*self.rawrhum/65535.0
 
   #
-  # Method read_status returns the current status of the sensor. If reading of
-  # the status fails, it returns None.
+  # Property status returns the current status of the sensor. If reading of the
+  # status fails, it returns None.
   #
-  def read_status( self ):
+  @property
+  def status( self ):
     self._write_command( SHT31_READSTATUS )
     sts= self.read_i2c_block_data( self.device, 0x00, SHT31_READSTATUS_LNG )
     if self._calc_crc8( sts[0:3] ) == 0:
@@ -187,10 +191,11 @@ class SHT31( smbus.SMBus ):
       return None
 
   #
-  # Method read_temperature returns the current temperature, expressed in
-  # degrees Celsius. If reading of the temperature fails, it returns value NaN.
+  # Property temperature returns the current temperature, expressed in degrees
+  # Celsius. If reading of the temperature fails, it returns value NaN.
   #
-  def read_temperature( self ):
+  @property
+  def temperature( self ):
     self._read_raw()
     if self.rawtemp == None:
       return float( 'nan' )
