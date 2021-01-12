@@ -48,8 +48,8 @@ def InformXymon( Hst, Tst, Clr, Msg ):	# Send status message to the xymon server
 # MAIN PROGRAM.
 #
 sensor= BMEP280.BMP280( 0x76 )		# BMP280 sensor
-temp= sensor.read_temperature()		# Temperature [C]
-pres= sensor.read_pressure()		# Air pressure [P]
+temp= sensor.temperature		# Temperature [C]
+pres= sensor.pressure			# Air pressure [P]
 
 Table = "%-12s : %7.2f [%s]\n"
 XyMsg = "<b>Bosch sensor BMP280 #0</b>\n\n"
@@ -63,10 +63,10 @@ XyMsg+= "0 %.3f:%d\n" % (temp,pres)
 XyMsg+= "-->"
 
 sensor= SHT31.SHT31( 0x44 )
-temp= sensor.read_temperature()
-humi= sensor.read_humidity() / 100.0
-dewp= sensor.read_dew_point()
-errr= sensor.read_errorcount()
+temp= sensor.temperature
+humi= sensor.humidity / 100.0
+dewp= sensor.dew_point
+errr= sensor.errorcount
 
 XyMsg+= "<b>Sensirion sensor SHT31-DIS #1</b>\n\n"
 XyMsg+= Table % ( 'Temperature', temp, 'C' )
