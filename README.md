@@ -2,6 +2,10 @@
 
 In this repository a few drivers for sensors are collected. The drivers are written in Python3, and are developed, tested and used on various models of a Raspberry Pi.
 
+### BH1750.py
+
+File BH1750_rpi.py contains a class definition for the ROHM BH1750 sensor. This sensor measures the light intensity. The resolution can be set to 0.5, 1 or 4 [lx], while the sensitivity (that is the measuring time) can be set to a value in the range 31..254. Property range returns the minimal and the maximal intensity which can be measured. The maximum is a function of both the resolution and the sensitivity. This version of the sensor driver is used on a Raspberry Pi.
+
 ### BMEP280.py
 
 File BMEP280_rpi.py contains a class definition for the Bosch BMP280 sensor, as well as a class definition for the Bosch BME280 sensor. The latter driver also includes a method to retrieve the current dew point temperature, which is calculated from the current temperature and the current relative humidity.
