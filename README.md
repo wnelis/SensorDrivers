@@ -19,3 +19,5 @@ File SHT31.py contains a class definition for the Sensir(i)on temperature and hu
 ### TOF10120.py
 
 The time-of-flicht sensor TOF10120 contains two communication interfaces. File TOF10120_rpi contains a class definition for each interface, delivering a programmers interface which hides the differences between the two communication interfaces. This version is tested on Raspberry Pi computers.
+
+The data sheet of this sensor is partly written in Chinese and partly in English. The API part of the data sheet is translated to English, edited and extended with personal observations. This version of the API can be found in file TOF10120.API.english.pdf.
