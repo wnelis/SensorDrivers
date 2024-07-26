@@ -1,5 +1,5 @@
 #
-# Driver for the distance sensor, time-of-flight tof10120
+# A Python driver for the distance sensor, time-of-flight tof10120
 #
 # Sensor TOF10120 is equipped with two communication interfaces, an asynchronous
 # serial interface and an I2C bus interface. Via both interfaces the same
@@ -41,10 +41,13 @@ import time
 
 
 #
+# ----- Class tof_uart -----
+#
 # Class tof_uart implements a simple driver for the asynchronous serial (UART)
-# interface of the TOF10120 sensor. At the creation of an instance, the medium mode is
-# checked. If the sensor is pushing measurements periodically via it's serial
-# interface, (register 4 == 0), it is disabled by setting register to 1.
+# interface of the TOF10120 sensor. At the creation of an instance, the medium
+# mode is checked. If the sensor is pushing measurements periodically via it's
+# serial interface, (register 4 == 0), it is disabled by setting this register
+# to 1.
 #
 class tof_uart():
   def __init__( self, port ):
@@ -53,7 +56,7 @@ class tof_uart():
        parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE,
        bytesize=serial.EIGHTBITS, timeout=1 )		# UART device object
  # Define the mapping of the driver registers to the addressing and formats
- # needed via the serial ingterface. The read table specifies the command to
+ # needed via the serial interface. The read table specifies the command to
  # retrieve a specific register and the regular expression to recognise and
  # decode the response from the sensor.
     self.rcrt= (			# Read command-response table
@@ -83,7 +86,9 @@ class tof_uart():
   # until the automatic sending is disabled.
     while True:
       val= self.read_register( 4 )
-      if   val == 1:
+      if   val is None:
+        pass
+      elif val == 1:
         break
       elif val == 0:
         if self.write_register( 4, 1 ):
@@ -97,9 +102,9 @@ class tof_uart():
  #
   def _read_line( self ):
     val= self.tof.read_until().decode()
-    dbg= val.replace( '\r', '<Cr>' )		# TEST
-    dbg= dbg.replace( '\n', '<Lf>' )		# TEST
-    print( f'Debug: _read_line: "{dbg}"' )	# TEST
+#   dbg= val.replace( '\r', '<Cr>' )		# TEST
+#   dbg= dbg.replace( '\n', '<Lf>' )		# TEST
+#   print( f'Debug: _read_line: "{dbg}"' )	# TEST
     return val.rstrip()
 
  #
@@ -107,7 +112,7 @@ class tof_uart():
  # writes the latter to the device.
  #
   def _write_line( self, val ):
-    print( f'Debug: _write_line: "{val}"' )	# TEST
+#   print( f'Debug: _write_line: "{val}"' )	# TEST
     self.tof.write( val.encode() )
 
   def open( self ):
@@ -120,9 +125,9 @@ class tof_uart():
       self.tof.close()
 
  #
- # Method read_register retrieves the content of a register. The returned value
- # either the current value of the register or None if the register address is
- # out of range or retrieval of the register failed.
+ # Method read_register retrieves the content of one register. The returned
+ # value either the current value of the register or None if the register
+ # address is out of range or retrieval of the register failed.
  #
  # After sending an r-command, a line termination sequence is received, prior to
  # the response on the command. The line termination sequence is “\r\r\n”. The
@@ -147,7 +152,7 @@ class tof_uart():
     if mo:
       return int( mo.group(1) )
     else:
-      print( f'Debug: read_register: "{aline}"' )	# TEST
+#     print( f'Debug: read_register: "{aline}"' )	# TEST
       return None
 
  #
@@ -175,14 +180,16 @@ class tof_uart():
     if mo:
       return mo.group(1) == 'ok!'
     else:
-      print( f'Debug: write_register: "{aline}"' )	# TEST
+#     print( f'Debug: write_register: "{aline}"' )	# TEST
       return False			# Unrecognised response
 
 
 #
+# ----- Class tof_i2c -----
+#
 # Class tof_i2c implements a simple driver for the I2C interface of the distance
 # sensor TOF10120.
-
+#
 class tof_i2c():
   def __init__( self, addr ):
     self.addr= addr
@@ -190,8 +197,8 @@ class tof_i2c():
   #
   # Table rft specifies for each (high level) register the associated address at
   # the I2c level, it's length in octets, the struct.pack format string and the
-  # writable flag. Note that the format string is used for both conversion and
-  # setting the byte order.
+  # writable flag. Note that the format string includes a specification of the
+  # byte order.
   #
     self.rft= (				# Register formatting table
       (  6, 2, '>h', True  ),		# Register 0
