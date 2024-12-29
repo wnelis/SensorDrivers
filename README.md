@@ -1,6 +1,6 @@
 # SensorDrivers
 
-In this repository a few drivers for sensors are collected. The drivers are written in Python3, and are developed, tested and used on various models of a Raspberry Pi.
+In this repository a few drivers for sensors are collected. The drivers are written in either Python3, and are developed, tested and used on various models of a Raspberry Pi, or in microPython, in which case they are developed and tested on an ESP8266 or an ESP32.
 
 ### BH1750.py
 
@@ -11,6 +11,10 @@ File BH1750_rpi.py contains a class definition for the ROHM BH1750 sensor. This 
 File BMEP280_rpi.py contains a class definition for the Bosch BMP280 sensor, as well as a class definition for the Bosch BME280 sensor. The latter driver also includes a method to retrieve the current dew point temperature, which is calculated from the current temperature and the current relative humidity.
 
 File BMEP280_esp.py also contains class definitions for the Bosch BMP280 and BME280 sensors. This version of the driver is adapted for an ESP8266 microcontroller and thus for use in microPython.
+
+### BME680.py
+
+File BME680_esp.py contains a class definition for the BOSCH BME680 sensor. It does NOT support retrieval of an air quality measure, it is effectively used as a successor of the BME280. It does include an optimised calculation of the calibrated temeprature and a calculation of the current dew point temperature. Floating point arithmetic is used, as it seems to be slightly faster, even on an ESP8266 which does not have an FPU.
 
 ### SHT31.py
 
