@@ -1,17 +1,17 @@
 #
 # Class definitions for Bosch BMP280 and Bosch BME280 sensors.
-# These class definitions are specific for an ESP8266 device. As a consequence,
-# these definitions are written for MicroPython. These classes only support the
-# forced mode of measurements.
-# These definitions are a rewrite of the definitions for a Raspberry Pi, in
-# which module smbus2 is used to access the I2C bus.
+# These class definitions are specific for an ESP8266 device and are written for
+# MicroPython. These classes only support the forced mode of measurements.
+#
+# These definitions are a rewrite of the definitions for a Raspberry Pi.
 #
 # Written   by W.J.M. Nelis, wim.nelis@ziggo.nl, 2018.02
 # - for a Raspberry Pi
 #
 # Rewritten by W.J.M. Nelis, wim.nelis@ziggo.nl, 2020.06
-# - for a ESP8266 running microPython
+# - for an ESP8266 running microPython
 # - see also https://github.com/robert-hh/BME280
+# - Properties are not used, as bounded methods are needed in tables.
 #
 from machine import Pin, I2C            # I2C driver
 from micropython import const           # Memory minimisation
@@ -30,8 +30,8 @@ micropython.opt_level( 0 )
 
 #
 # Constant definitions for sensor BMP280.
-# Define the chip register addresses and address blocks. Note that the values to
-# be written to a register need to be byte strings.
+# Define the chip register addresses and address blocks. Note that the value to
+# be written to a register needs to be a byte.
 #
 BMP280_REG_CALIBRTN= const( 0x88 )      # Start of calibration data
 BMP280_LNG_CALIBRTN= const(   24 )      # Length of calibration data
@@ -64,10 +64,11 @@ class BMP280():
     self.rawtemp = None                 # Last temperature measurement
     self.rawpres = None                 # Last pressure measurement
     self.t_fine  = None                 # Compensation temperature value
-    self.livetime= 2                    # Live time of one measurement [s]
-    self.tom= time.time() - self.livetime - 1   # Time of last measurement
+    self.lifetime= 2                    # Life time of one measurement [s]
+    self.tom= time.time() - self.lifetime - 1   # Time of last measurement
 
     self._check_chip()                  # Check device address and chip
+    self.reset()                        # Just to be sure, initialise chip
     self._config_chip()                 # Set configuration register
     self._load_calibration()            # Fetch calibration data
 
@@ -100,11 +101,11 @@ class BMP280():
  # Private method _read_raw retrieves the current (raw) measurements of the
  # pressure and the temperature. The mode of operation is forced mode, thus the
  # sensor must be triggered to perform a measurement. At most one measurement
- # per livetime seconds is performed.
+ # per lifetime seconds is performed.
  #
   def _read_raw( self ):
     now= time.time()
-    if self.tom < now-self.livetime:
+    if self.tom < now-self.lifetime:
   #
   # Select force mode and wait for the measurement to be complete. The time
   # typically needed is 1.5 + 2*(osr_t + osr_p) [ms]. Check every 10 [ms] if the
@@ -113,7 +114,7 @@ class BMP280():
       self._write_register( BMP280_REG_CONTROL, BMP280_VAL_CONTROL )
       m= 1                              # A random integer non-zero value
       while m != 0:
-        time.sleep( 0.010 )
+        time.sleep_ms( 10 )
         try:
           m= self._read_register( BMP280_REG_STATUS ) & 0x08
         except OSError as err:
@@ -124,20 +125,25 @@ class BMP280():
       except OSError as err:
         pass
 
-      self.rawpres= ((d[0]<<16) + (d[1]<<8) + d[2])>>4
-      self.rawtemp= ((d[3]<<16) + (d[4]<<8) + d[5])>>4
+      self.rawpres= (d[0]<<12) + (d[1]<<4) + (d[2]>>4)
+      self.rawtemp= (d[3]<<12) + (d[4]<<4) + (d[5]>>4)
       self.t_fine = None
       self.tom    = now
 
  #
  # Private method _read_register returns the content of one register, a byte
- # value. The register address can be in the range [0x80,0xff].
+ # value. The register address should be in the range [0x80,0xff].
  #
   def _read_register( self, register ):
     assert 0x7f < register < 0x100, \
       'Register address out of range: {:02x}'.format(register)
     return self.i2c.readfrom_mem( self.device, register, 1 )[0]
 
+ #
+ # Private method _read_registers returns the content of a set of consecutive
+ # registers. The address of each of the registers should be in the range
+ # [0x80,0xff].
+ #
   def _read_registers( self, register, count ):
     assert 0x7f < register  and  register+count < 0x101, \
       'Register address out of range: {:02x}'.format(register)
@@ -145,7 +151,7 @@ class BMP280():
 
  #
  # Private method _write_register writes one byte into one register. The
- # register address can be in the range [0x80,0xff].
+ # register address should be in the range [0x80,0xff].
  #
   def _write_register( self, register, value ):
     assert 0x7f < register < 0x100, \
@@ -153,13 +159,12 @@ class BMP280():
     return self.i2c.writeto_mem( self.device, register, value )
 
  #
- # Property pressure returns the calibrated pressure expressed in [Pa]. The
+ # Method pressure returns the calibrated pressure expressed in [Pa]. The
  # formulas are taken from the Bosch BMP280 datasheet, section 8.1.
  #
-  @property
   def pressure( self ):
     self._read_raw()
-    if self.t_fine is None:  self.temperature
+    if self.t_fine is None:  self.temperature()
 
     var1= float(self.t_fine)/2.0 - 64000.0
     var2= var1*var1*self.cpp[5]/32768.0
@@ -180,10 +185,10 @@ class BMP280():
  #
   def reset( self ):
     self._write_register( BMP280_REG_RESET, BMP280_VAL_RESET )
-    time.sleep( 0.002 )                 # Startup time
+    time.sleep_ms( 2 )                  # Startup time
 
  #
- # Property temperature returns the calibrated temperature expressed in [C]. The
+ # Method temperature returns the calibrated temperature expressed in [C]. The
  # formulas are taken from the Bosch BMP280 datasheet, section 8.1. Note that a
  # temperature value (t_fine) is saved as an instance variable: it is needed to
  # calculate the calibrated pressure.
@@ -196,7 +201,6 @@ class BMP280():
  # These numbers must be computed with high precision. If this is possible in
  # advance, the temperature will become simpler and faster to compute.
  #
-  @property
   def temperature( self ):
     self._read_raw()
     var0= self.rawtemp/16384.0 - self.cpt[0]/1024.0
@@ -277,11 +281,11 @@ class BME280( BMP280 ):
  # Private method _read_raw retrieves the current (raw) measurements of the
  # pressure, the temperature and the humidity. The mode of operation is forced
  # mode, thus the sensor must be triggered to perform a measurement. At most one
- # measurement per livetime seconds is performed.
+ # measurement per lifetime seconds is performed.
  #
   def _read_raw( self ):
     now= time.time()
-    if self.tom < now-self.livetime:
+    if self.tom < now-self.lifetime:
   #
   # Select force mode and wait for the measurement to be complete. Note that the
   # humidity control register MUST be set prior to invoking this method! The
@@ -291,21 +295,21 @@ class BME280( BMP280 ):
       self._write_register( BME280_REG_CONTROL0, BME280_VAL_CONTROL0 )
       m= 1                              # A random integer non-zero value
       while m != 0:
-        time.sleep( 0.010 )
+        time.sleep_ms( 10 )
         m= self._read_register( BME280_REG_STATUS ) & 0x08
 
       d= self._read_registers( BME280_REG_RAW_DATA, BME280_LNG_RAW_DATA )
-      self.rawpres= ((d[0]<<16) + (d[1]<<8) + d[2])>>4
-      self.rawtemp= ((d[3]<<16) + (d[4]<<8) + d[5])>>4
-      self.rawhumi=  (d[6]<< 8) +  d[7]
+      self.rawpres= (d[0]<<12) + (d[1]<<4) + (d[2]>>4)
+      self.rawtemp= (d[3]<<12) + (d[4]<<4) + (d[5]>>4)
+      self.rawhumi= (d[6]<< 8) +  d[7]
       self.t_fine = None
       self.tom    = now
 
  #
- # Property humidity returns the calibrated humidity expressed as a fraction,
- # thus a value in the range [0,1]. The formulas were initially taken from the
- # Bosch BME280 datasheet, section 8.1. However, the sample code published by
- # the manufacturer contains a slightly different formula (see
+ # Method humidity returns the calibrated humidity expressed as a fraction, thus
+ # a value in the range [0,1]. The formulas were initially taken from the Bosch
+ # BME280 datasheet, section 8.1. However, the sample code published by the
+ # manufacturer contains a slightly different formula (see
  # https://github.com/BoschSensortec/BME280_driver/blob/master/bme280.c). As
  # this source is taken to be authorative, the sample code is used.
  #
@@ -316,10 +320,9 @@ class BME280( BMP280 ):
  # Note that a temperature value (t_fine) is saved as an instance variable: it
  # is needed to calculate the calibrated humidity.
  #
-  @property
   def humidity( self ):
     self._read_raw()
-    if self.t_fine is None:  self.temperature
+    if self.t_fine is None:  self.temperature()
 
     var0= float(self.t_fine) - 76800.0
     var1= float(self.rawhumi) - self.cph[3]*64.0 - self.cph[4]/16384.0*var0
@@ -333,10 +336,10 @@ class BME280( BMP280 ):
     return humi / 100.0
 
  #
- # Property dew_point calculates the dew point temperature expressed in [C],
- # given the temperature and the relative humidity. The formula and the
- # constants are taken from URL https://nl.wikipedia.org/wiki/Dauwpunt. See also
- # URL https://en.wikipedia.org/wiki/Vapour_pressure_of_water
+ # Method dew_point calculates the dew point temperature expressed in [C], given
+ # the temperature and the relative humidity. The formula and the constants are
+ # taken from URL https://nl.wikipedia.org/wiki/Dauwpunt. See also URL
+ # https://en.wikipedia.org/wiki/Vapour_pressure_of_water
  #
  # The computation is using the Tetens approximation formula between temperature
  # T and the maximal vapor pressure P twice. The formula is:
@@ -347,10 +350,9 @@ class BME280( BMP280 ):
  # substituting this product in formula (1) results in the formula's used in
  # this method.
  #
-  @property
   def dew_point( self ):
-    temp= self.temperature
-    humi= self.humidity
+    temp= self.temperature()
+    humi= self.humidity()
     a=  17.27                           # []
     b= 237.7                            # [C]
     gamma= math.log(humi) + a*temp/(b + temp)
