@@ -14,7 +14,13 @@ File BMEP280_esp.py also contains class definitions for the Bosch BMP280 and BME
 
 ### BME680.py
 
-File BME680_esp.py contains a class definition for the BOSCH BME680 sensor. It does NOT support retrieval of an air quality measure, it is effectively used as a successor of the BME280. It does include an optimised calculation of the calibrated temeprature and a calculation of the current dew point temperature. Floating point arithmetic is used, as it seems to be slightly faster, even on an ESP8266 which does not have an FPU.
+File BME680_esp.py contains a class definition for the BOSCH BME680 sensor. It does NOT support retrieval of an air quality measure, it is effectively used as a successor of the BME280. It does include an optimised calculation of the calibrated temperature and a calculation of the current dew point temperature. Floating point arithmetic is used, as it seems to be slightly faster, even on an ESP8266 which does not have an FPU.
+
+### SCD4X.py
+
+File SCD4X_esp.py contains a driver for the Sensirion SCD40 or SCD41 sensor, which can measure the CO2 concentration. As some of the commands to this sensor require quite a long time to complete, asyncio is used to allow for other tasks to run in the meantime. Thus some of the methods are coroutines. The number of coroutines is minimised by using `time.sleep()`, in stead of `await asyncio.sleep()`, if the delay is shorter than a few milliseconds.
+
+The performance of this driver as well as it's size are optimised in various ways. (A) the CRC's of a nibble are precomputed, at the expense of a tuple with 16 bytes. (B) A memoryview is used to slice the buffer with the data read or the data to be written. (C) The names of constants start with an underscore. (D) A temperature conversion constant is precomputed and saved in the instance. (E) A part of the methods can be omitted by setting installation parameter _SCD4X_ALL_MODULES to 0 (False). (F) Methods struct.pack and struct.unpack are used to convert 16-bit unsigned numbers into two 8-bit octets and vice versa. (G) A number of run-time checks can be disabled, making the compiled version smaller, by setting the micropython optimisation level to 1 of higher.
 
 ### SHT31.py
 
