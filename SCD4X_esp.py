@@ -98,7 +98,7 @@ class SCD4X:
     self._co2         = None
     # Conversion constant and buffers
     self._cct0  = 175 / 65535		# Temperature conversion constant
-    self._buffer= bytearray(18)		# Buffer for i2c I/O
+    self._buffer= bytearray(9)		# Buffer for i2c I/O
     self._bview = memoryview(self._buffer)	# Allow efficient slicing
     self._cmd   = bytearray(2)		# Buffer for a single command
 
@@ -159,7 +159,7 @@ class SCD4X:
     assert 0 <= value <= 65535, f'Illegal value {int}'
     if _SCD4X_DEBUG:  print( f'SetV {cmd:04x} {value:04x}' )
     self._buffer[:4]= struct.pack('>HH', cmd, value)
-    self._buffer[ 4]= self._crc8(self._bview[2:2])
+    self._buffer[ 4]= self._crc8(self._bview[2:4])
     self.i2c_dev.writeto(self.address, self._bview[:5])
 
   if _SCD4X_DEBUG:
@@ -203,10 +203,7 @@ class SCD4X:
   def set_temperature_offset(self, offset: Union[int, float]) -> None:
     """Set the temperature offset."""
     assert self.is_idle, 'Sensor is not in idle mode'
-    if offset <   0:
-      raise AttributeError('Negative temperature offsets are not possible')
-    if offset > 374:
-      raise AttributeError(f'Temperature offset too large: {offset}')
+    assert 0 <= offset < 175, 'Temperature offset out of range'
 #   raw = int( min(max(offset,0),20) / self._cct0 )
     raw = int( offset / self._cct0)
     self._set_value(_SCD4X_SETTEMPOFFSET, raw)
@@ -219,7 +216,7 @@ class SCD4X:
     self._send_command(_SCD4X_GETTEMPOFFSET)
     time.sleep_ms(1)
     self._read_reply(3)
-    if _SCD4X_DEBUG:  self._PriB('GetT')
+    if _SCD4X_DEBUG:  self._PriB('GetTO')
     raw = (self._buffer[0] << 8) | self._buffer[1]
     return raw * self._cct0
 
@@ -227,8 +224,7 @@ class SCD4X:
     def set_altitude(self, height: int) -> None:
       """Set an offset for the air pressure by specifying the altitude."""
       assert self.is_idle, 'Sensor is not in idle mode'
-      if not( 0 <= height < 65535):
-        raise AttributeError("Height must be less than or equal to 65535 metres")
+      assert 0 <= height < 65535, 'Height out of range'
       self._set_value(_SCD4X_SETALTITUDE, height)
       time.sleep_ms(1)
 
@@ -243,8 +239,7 @@ class SCD4X:
 
   def set_ambient_pressure(self, pressure: int) -> None:
     """Set the ambient pressure to adjust the CO2 calculations."""
-    if not( 700 <= pressure <= 1200 ):
-      raise AttributeError('Ambient pressure outside range 700~1200 [hPa]')
+    assert 700 <= pressure <= 1200, 'Ambient pressure out of range'
     self._set_value(_SCD4X_SETPRESSURE, pressure)
     time.sleep_ms(1)
 
